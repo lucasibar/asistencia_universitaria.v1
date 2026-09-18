@@ -2,7 +2,7 @@ services:
   - type: web
     name: asistencia-universitaria-api
     runtime: node
-    rootDir: asistencia_universitaria.v1
+    rootDir: .
     buildCommand: npm ci && npm run build
     preDeployCommand: npm run migrate
     startCommand: npm start
