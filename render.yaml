@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: asistencia-universitaria-api
+    runtime: node
+    rootDir: asistencia_universitaria.v1
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npm run migrate
+    startCommand: npm start
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: "true"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: QR_SIGNING_SECRET
+        generateValue: true
+      - key: TRUST_PROXY_HOPS
+        value: "1"
