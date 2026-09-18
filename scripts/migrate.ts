@@ -25,4 +25,8 @@ async function main() {
   } catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); await pool.end(); }
 }
-main().catch(() => { console.error('Migration failed. Verify database access and migration compatibility.'); process.exitCode = 1; });
+main().catch((error: unknown) => {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown database error';
+  console.error(`Migration failed: ${detail}`);
+  process.exitCode = 1;
+});
