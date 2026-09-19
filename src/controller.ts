@@ -3,7 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { Admin, AuthRequest, Public } from './auth';
 import { AttendanceService } from './attendance';
-import { ArchiveDto, ConfirmDto, CourseDto, ManualDto, SessionDto, StartDto, VoidDto } from './dto';
+import { AcademicProfileDto, ArchiveDto, ConfirmDto, CourseDto, ManualDto, SessionDto, StartDto, VoidDto } from './dto';
 import { Database } from './db';
 import { fail } from './errors';
 
@@ -14,6 +14,13 @@ export class ApiController {
   @Public() @Get('health') health() { return { status: 'ok' }; }
   @Public() @Get('health/ready') async ready() { await this.db.query('SELECT 1'); return { status: 'ok' }; }
   @Get('me') me(@Req() request: AuthRequest) { return request.actor; }
+  @Post('me/academic-profile') academicProfile(@Req() request: AuthRequest, @Body() body: AcademicProfileDto) {
+    return this.service.saveAcademicProfile(request.actor, body.firstName, body.lastName);
+  }
+  @Post('me/teacher') async registerTeacher(@Req() request: AuthRequest) {
+    // Explicit self-registration grants access only to this account's own courses.
+    return (await this.db.query("UPDATE attendance_app.profiles SET role='ADMIN' WHERE id=$1 RETURNING id,role,name,email", [request.actor.id])).rows[0];
+  }
   @Admin() @Get('courses') courses(@Req() r: AuthRequest, @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number, @Query('includeArchived', new DefaultValuePipe(false), ParseBoolPipe) includeArchived: boolean) { return this.service.courses(r.actor, page(offset), includeArchived); }
   @Admin() @Post('courses') createCourse(@Req() r: AuthRequest, @Body() body: CourseDto) { return this.service.createCourse(r.actor, body.name); }
   @Admin() @Get('courses/:id/classes') classes(@Req() r: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number) { return this.service.classes(r.actor, id, page(offset)); }

@@ -20,6 +20,16 @@ export class AttendanceService {
     return (await this.db.query(`SELECT c.*, (SELECT count(*)::int FROM attendance_app.classes cl WHERE cl.course_id=c.id AND cl.archived_at IS NULL) AS class_count
       FROM attendance_app.courses c WHERE created_by=$1 AND ($3::boolean OR archived_at IS NULL) ORDER BY created_at DESC,id LIMIT 100 OFFSET $2`, [actor.id, offset, includeArchived])).rows;
   }
+  async saveAcademicProfile(actor: Actor, firstName: string, lastName: string) {
+    return (await this.db.query(`UPDATE attendance_app.profiles
+      SET academic_first_name=$2,academic_last_name=$3,name=$2 || ' ' || $3
+      WHERE id=$1 RETURNING id,role,name,email,academic_first_name,academic_last_name`,
+      [actor.id, firstName, lastName])).rows[0];
+  }
+  private async requireAcademicProfile(tx: Client, userId: string) {
+    const profile = (await tx.query('SELECT academic_first_name,academic_last_name FROM attendance_app.profiles WHERE id=$1', [userId])).rows[0];
+    if (!profile?.academic_first_name || !profile?.academic_last_name) fail('ACADEMIC_PROFILE_REQUIRED', 409);
+  }
   async createCourse(actor: Actor, name: string) {
     return (await this.db.query('INSERT INTO attendance_app.courses(name,created_by) VALUES($1,$2) RETURNING *', [name, actor.id])).rows[0];
   }
@@ -86,6 +96,7 @@ export class AttendanceService {
   }
   async confirm(actor: Actor, attemptId: string, secret: string) {
     return this.db.transaction(async tx => {
+      await this.requireAcademicProfile(tx, actor.id);
       const initial = (await tx.query('SELECT session_id FROM attendance_app.check_in_attempts WHERE id=$1', [attemptId])).rows[0];
       if (!initial) fail('INVALID_ATTEMPT', 404);
       const session = await this.lockSession(tx, initial.session_id);
@@ -125,6 +136,7 @@ export class AttendanceService {
       const session = await this.lockSession(tx, sessionId, actor);
       if (session.class_archived_at || session.course_archived_at || session.status === 'CANCELLED') fail('SESSION_CANCELLED', 410);
       if (!(await tx.query('SELECT id FROM attendance_app.profiles WHERE id=$1', [userId])).rowCount) fail('STUDENT_NOT_FOUND', 404);
+      await this.requireAcademicProfile(tx, userId);
       const inserted = await tx.query(`INSERT INTO attendance_app.attendance(session_id,user_id,source,created_by)
         VALUES($1,$2,'MANUAL',$3) ON CONFLICT(session_id,user_id) DO NOTHING RETURNING *`, [sessionId, userId, actor.id]);
       const attendance = inserted.rows[0] ?? (await tx.query('SELECT * FROM attendance_app.attendance WHERE session_id=$1 AND user_id=$2', [sessionId, userId])).rows[0];

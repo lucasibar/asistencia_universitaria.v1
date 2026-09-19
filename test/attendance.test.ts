@@ -9,7 +9,8 @@ import { AttendanceService } from '../src/attendance';
 import { QrTokens } from '../src/qr';
 import { Database } from '../src/db';
 import { Config } from '../src/config';
-import { Actor } from '../src/auth';
+import { Actor, AuthGuard } from '../src/auth';
+import { Reflector } from '@nestjs/core';
 import { SessionDto, ConfirmDto } from '../src/dto';
 
 const config = { qrSecret: 'a'.repeat(64), rotationSeconds: 10, attemptSeconds: 60, frontendUrl: 'https://front.example' } as Config;
@@ -27,7 +28,9 @@ const stranger: Actor = { id: randomUUID(), role: 'ADMIN', name: 'Otro profesor'
 
 before(async () => {
   await pg.exec(readFileSync('migrations/001_initial.sql', 'utf8'));
+  await pg.exec(readFileSync('migrations/002_academic_name.sql', 'utf8'));
   for (const user of [admin, student, other, stranger]) await db.query('INSERT INTO attendance_app.profiles(id,google_subject,email,name,role) VALUES($1::uuid,$1::text,$2,$3,$4)', [user.id, user.email, user.name, user.role]);
+  for (const user of [admin, student, other, stranger]) await service.saveAcademicProfile(user, user.name, 'Apellido');
 });
 after(async () => pg.close());
 async function session() { return service.createSession(admin, { courseName: 'Coaching N1', name: 'Clase 1', durationMinutes: 5 }); }
@@ -131,4 +134,26 @@ test('HTTP DTO validation rejects arbitrary identity and invalid durations', asy
   const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
   await assert.rejects(pipe.transform({ courseName: 'N1', name: 'Clase', durationMinutes: 100 }, { type: 'body', metatype: SessionDto }));
   await assert.rejects(pipe.transform({ attemptId: randomUUID(), attemptSecret: 'a'.repeat(43), email: 'forged@example.com' }, { type: 'body', metatype: ConfirmDto }));
+});
+
+test('academic identity is required, persists separately and appears in attendance', async () => {
+  const learner: Actor = { id: randomUUID(), role: 'STUDENT', name: 'Google Nickname', email: 'personal@example.com' };
+  await db.query('INSERT INTO attendance_app.profiles(id,google_subject,email,name) VALUES($1::uuid,$1::text,$2,$3)', [learner.id, learner.email, learner.name]);
+  const s = await session(); const a = await attempt(s.id);
+  await assert.rejects(service.confirm(learner, a.attemptId, a.attemptSecret), code('ACADEMIC_PROFILE_REQUIRED'));
+  await assert.rejects(service.manual(admin, s.id, learner.id), code('ACADEMIC_PROFILE_REQUIRED'));
+  assert.equal((await service.attendees(admin, s.id)).length, 0);
+  const profile = await service.saveAcademicProfile(learner, 'María José', 'Pérez Gómez');
+  assert.equal(profile.email, learner.email); assert.equal(profile.name, 'María José Pérez Gómez');
+  const guard = new AuthGuard({ ...config, supabaseUrl: 'https://example.supabase.co', supabaseKey: 'test-key' }, db, new Reflector());
+  (guard as any).supabase.auth.getUser = async () => ({ data: { user: { id: learner.id, email: learner.email, email_confirmed_at: new Date().toISOString(), identities: [{ provider: 'google', identity_data: { sub: learner.id, full_name: 'Changed Google Alias' } }] } }, error: null });
+  const request: any = { headers: { authorization: 'Bearer test' } };
+  await guard.canActivate({ getHandler: () => function handler() {}, getClass: () => class Controller {}, switchToHttp: () => ({ getRequest: () => request }) } as any);
+  assert.equal(request.actor.name, 'María José Pérez Gómez');
+  assert.equal(request.actor.academic_first_name, 'María José');
+  assert.equal((await service.confirm(learner, a.attemptId, a.attemptSecret)).status, 'PRESENT');
+  const rows = await service.attendees(admin, s.id);
+  assert.equal(rows[0].name, profile.name); assert.equal(rows[0].email, learner.email);
+  const next = await session(); const nextAttempt = await attempt(next.id);
+  assert.equal((await service.confirm(learner, nextAttempt.attemptId, nextAttempt.attemptSecret)).status, 'PRESENT');
 });

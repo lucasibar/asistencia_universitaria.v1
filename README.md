@@ -23,16 +23,9 @@ npm start
 2. Configurar `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` (publishable o anon). La clave privada de Google y la service role no se usan en React ni son necesarias para validar usuarios en Nest.
 3. Configurar `DATABASE_URL` con acceso PostgreSQL al proyecto (conexión directa o pooler de sesión). En producción usar TLS verificado: `DATABASE_SSL=true`; si hace falta, suministrar el certificado CA en `DATABASE_CA`.
 4. Ejecutar migraciones con un rol propietario de las tablas. El backend debe conectarse con ese mismo rol, o uno de backend específicamente autorizado con acceso y políticas adecuadas. El esquema privado tiene RLS sin políticas de acceso para clientes.
-5. Iniciar sesión con Google desde el frontend y llamar `GET /me` con el access token para crear el perfil local.
-6. En el SQL Editor de Supabase, promover explícitamente el UUID autenticado del profesor:
+5. Iniciar sesión con Google desde el frontend y confirmar «Registrarme como profesor». `POST /me/teacher` registra únicamente la cuenta autenticada, con identidad Google verificada.
 
-```sql
-UPDATE attendance_app.profiles
-SET role = 'ADMIN'
-WHERE id = 'UUID-DEL-USUARIO-SUPABASE';
-```
-
-No hay registro público de administradores ni roles derivados del email o de user_metadata. Cada profesor administra sus propios cursos. Los administradores pueden buscar los perfiles existentes para alta manual; un alumno debe haber iniciado sesión al menos una vez para aparecer en esa búsqueda.
+El rol interno ADMIN representa a un profesor, que administra únicamente sus propios cursos. Los roles no se derivan del email ni de user_metadata. Los profesores pueden buscar perfiles existentes para alta manual; un alumno debe haber iniciado sesión al menos una vez para aparecer en esa búsqueda.
 
 ## Integración
 

@@ -6,7 +6,7 @@ import { CONFIG, Config } from './config';
 import { Database } from './db';
 import { fail } from './errors';
 
-export interface Actor { id: string; role: 'ADMIN' | 'STUDENT'; name: string; email: string; }
+export interface Actor { id: string; role: 'ADMIN' | 'STUDENT'; name: string; email: string; academic_first_name?: string | null; academic_last_name?: string | null; }
 export interface AuthRequest extends Request { actor: Actor; }
 export const Public = () => SetMetadata('public', true);
 export const Admin = () => SetMetadata('admin', true);
@@ -36,8 +36,9 @@ export class AuthGuard implements CanActivate {
     const identity = google.identity_data;
     const { rows } = await this.db.query(`INSERT INTO attendance_app.profiles(id,google_subject,email,name,avatar_url)
       VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET email=excluded.email,
-      name=excluded.name,avatar_url=excluded.avatar_url,last_login_at=clock_timestamp()
-      RETURNING id,role,name,email`, [user.id, identity.sub, user.email,
+      name=CASE WHEN profiles.academic_first_name IS NULL THEN excluded.name ELSE profiles.name END,
+      avatar_url=excluded.avatar_url,last_login_at=clock_timestamp()
+      RETURNING id,role,name,email,academic_first_name,academic_last_name`, [user.id, identity.sub, user.email,
       String(identity.full_name ?? identity.name ?? user.email).slice(0, 200), identity.avatar_url ?? null]);
     request.actor = rows[0];
     if (this.reflector.getAllAndOverride('admin', targets) && request.actor.role !== 'ADMIN') fail('FORBIDDEN', 403);

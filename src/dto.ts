@@ -1,6 +1,10 @@
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
 const Trim = () => Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value);
+export class AcademicProfileDto {
+  @IsString() @Trim() @Length(1, 100) firstName!: string;
+  @IsString() @Trim() @Length(1, 100) lastName!: string;
+}
 export class CourseDto {
   @IsString() @Trim() @Length(1, 120) name!: string;
 }

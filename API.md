@@ -80,3 +80,11 @@ Reintentar confirmación con **el mismo** intento y secreto ante un error de red
 | 500 | INTERNAL_ERROR | Error del servidor; permitir reintento seguro |
 
 Las rutas de otro profesor responden 404. Los campos adicionales o inválidos responden 400 `REQUEST_REJECTED` con mensajes de validación. `COURSE_ARCHIVED`, `COURSE_NOT_FOUND`, `CLASS_NOT_FOUND`, `SESSION_NOT_FOUND`, `STUDENT_NOT_FOUND` y `ATTENDANCE_NOT_FOUND` indican recurso no disponible. Para el contador filtrar PRESENT; conservar VOIDED en la vista histórica.
+
+## Registro docente
+
+POST `/me/teacher`, con Bearer de Google verificado, registra la cuenta autenticada como profesor. Es idempotente y solo modifica el perfil del solicitante. El rol interno ADMIN administra exclusivamente sus propios cursos. No se registra automáticamente a quien ingresa para escanear un QR.
+
+## Identidad académica del alumno
+
+Aplicar `002_academic_name.sql` antes de actualizar el backend. `GET /me` incluye `academic_first_name` y `academic_last_name` (null hasta completarlos). `POST /me/academic-profile` recibe `{ "firstName": "Ana", "lastName": "Gómez" }` y guarda solo el perfil autenticado. No admite email ni ID de otro usuario. El nombre declarado reemplaza el nombre visible en listados y CSV, y Google no lo sobrescribe en futuros accesos. Confirmación y alta manual rechazan perfiles incompletos con `ACADEMIC_PROFILE_REQUIRED` (409). Los perfiles existentes deben completar sus datos: no se infiere el nombre académico de Google. El intento conserva su vencimiento original; si vence mientras se completa el formulario, el perfil queda guardado y se debe escanear un nuevo QR vigente. Es una declaración del alumno, no validación contra un padrón institucional.

@@ -13,10 +13,10 @@ const userId = '58fdf1ae-f8c0-4824-b92d-64e4a1f392cb';
 let currentRole = 'STUDENT';
 let identity: any = { id: userId, email: 'alumno@example.com', email_confirmed_at: new Date().toISOString(),
   identities: [{ provider: 'google', identity_data: { sub: 'google-id', name: 'Alumno' } }], user_metadata: { role: 'ADMIN' } };
-const database = { query: async () => ({ rows: [{ id: userId, name: 'Alumno', email: 'alumno@example.com', role: currentRole }] }) };
+const database = { query: async (sql: string, params?: unknown[]) => { if (sql.startsWith('UPDATE attendance_app.profiles')) { assert.deepEqual(params, [userId]); currentRole = 'ADMIN'; } return ({ rows: [{ id: userId, name: 'Alumno', email: 'alumno@example.com', role: currentRole }] }); } };
 const guard = new AuthGuard({ supabaseUrl: 'https://example.supabase.co', supabaseKey: 'test-key' }, database, new Reflector());
 guard.supabase.auth.getUser = async (token: string) => token === 'valid' ? { data: { user: identity }, error: null } : { data: { user: null }, error: new Error('invalid') };
-const service = { courses: async () => [], createSession: async (actor: any, body: any) => ({ name: body.name }), start: async () => ({ attemptId: userId }) };
+const service = { saveAcademicProfile: async (actor: any, firstName: string, lastName: string) => ({ id: actor.id, name: firstName + ' ' + lastName }), courses: async () => [], createSession: async (actor: any, body: any) => ({ name: body.name }), start: async () => ({ attemptId: userId }) };
 @Module({ controllers: [ApiController], providers: [
   { provide: Database, useValue: database }, { provide: AttendanceService, useValue: service }, { provide: APP_GUARD, useValue: guard },
 ] })
@@ -60,4 +60,23 @@ test('HTTP admin routes accept DB role and reject malformed DTOs', async () => {
 test('HTTP start is public but validates its DTO', async () => {
   const response = await fetch(`${base}/attendance/check-in/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qrToken: 'x' }) });
   assert.equal(response.status, 400);
+});
+
+test('teacher registration requires authentication and updates only the caller', async () => {
+  currentRole = 'STUDENT';
+  assert.equal((await fetch(base + '/me/teacher', { method: 'POST' })).status, 401);
+  const response = await fetch(base + '/me/teacher', { method: 'POST', headers: { Authorization: 'Bearer valid' } });
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).role, 'ADMIN');
+  assert.equal((await fetch(base + '/courses', { headers: { Authorization: 'Bearer valid' } })).status, 200);
+});
+
+test('academic profile validates names and never accepts another user identity', async () => {
+  const headers = { Authorization: 'Bearer valid', 'Content-Type': 'application/json' };
+  assert.equal((await fetch(base + '/me/academic-profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ firstName: 'Ana', lastName: 'Gómez' }) })).status, 401);
+  for (const body of [{ firstName: ' ', lastName: 'Gómez' }, { firstName: 'Ana' }, { firstName: 'Ana', lastName: 'Gómez', userId: 'someone-else' }]) {
+    assert.equal((await fetch(base + '/me/academic-profile', { method: 'POST', headers, body: JSON.stringify(body) })).status, 400);
+  }
+  const response = await fetch(base + '/me/academic-profile', { method: 'POST', headers, body: JSON.stringify({ firstName: ' Ana ', lastName: ' Gómez ' }) });
+  assert.equal(response.status, 201); assert.deepEqual(await response.json(), { id: userId, name: 'Ana Gómez' });
 });
